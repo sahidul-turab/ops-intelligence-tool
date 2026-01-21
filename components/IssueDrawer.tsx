@@ -7,6 +7,7 @@ export type IssueDrawerProps = {
   issue: IssueRecord | null;
   onClose: () => void;
   onSave: (updated: IssueRecord) => void;
+  onDelete?: (id: string) => void;
   employeeSuggestions: string[];
   subTeamSuggestions: string[];
 };
@@ -67,6 +68,7 @@ export default function IssueDrawer({
   issue,
   onClose,
   onSave,
+  onDelete,
   employeeSuggestions,
   subTeamSuggestions,
 }: IssueDrawerProps) {
@@ -111,6 +113,13 @@ export default function IssueDrawer({
       onClose();
     } else {
       setMode("read");
+    }
+  };
+
+  const handleDelete = () => {
+    if (onDelete && issue.id) {
+      onDelete(issue.id);
+      onClose();
     }
   };
 
@@ -405,6 +414,15 @@ export default function IssueDrawer({
               >
                 Exit
               </button>
+              {!isCreate && onDelete && (
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  className="rounded-xl border border-red-100 bg-red-50 px-6 py-3 text-xs font-bold uppercase tracking-widest text-red-600 hover:bg-red-100 transition-all ml-auto"
+                >
+                  Delete
+                </button>
+              )}
             </div>
           )}
         </div>

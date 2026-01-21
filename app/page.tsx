@@ -8,9 +8,10 @@ import IssueDrawer from "../components/IssueDrawer";
 import Autocomplete from "../components/Autocomplete";
 import { issues as initialIssues } from "../data/issues";
 import { Category, IssueRecord } from "../types/issue";
+import { fetchIssues, saveIssue, deleteIssueById } from "../lib/firestoreIssues";
 
 export default function Home() {
-  const [issues, setIssues] = useState<IssueRecord[]>(initialIssues);
+  const [issues, setIssues] = useState<IssueRecord[]>([]);
   const [employeeFilter, setEmployeeFilter] = useState("");
   const [subTeamFilter, setSubTeamFilter] = useState("");
   const [fromDate, setFromDate] = useState<string>("");
@@ -18,27 +19,24 @@ export default function Home() {
   const [selectedIssue, setSelectedIssue] = useState<IssueRecord | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Persistence: Load from localStorage on mount
+  // Persistence: Load from Firestore on mount
   useEffect(() => {
-    const saved = localStorage.getItem("ops-intelligence-records");
-    if (saved) {
+    const loadData = async () => {
       try {
-        const parsed = JSON.parse(saved);
-        const hydrated = parsed.map((it: any) => ({
+        const firestoreData = await fetchIssues();
+        // Hydrate dates and use it
+        const hydrated = firestoreData.map((it: any) => ({
           ...it,
-          date: new Date(it.date),
+          date: it.date?.toDate ? it.date.toDate() : new Date(it.date),
         }));
+        console.log("Firestore: Successfully fetched", hydrated.length, "records");
         setIssues(hydrated);
       } catch (err) {
-        console.error("Failed to load records from storage:", err);
+        console.error("Firestore: Error fetching records:", err);
       }
-    }
+    };
+    loadData();
   }, []);
-
-  // Persistence: Save to localStorage on change
-  useEffect(() => {
-    localStorage.setItem("ops-intelligence-records", JSON.stringify(issues));
-  }, [issues]);
 
   const filteredIssues = useMemo<IssueRecord[]>(() => {
     return issues.filter((issue) => {
@@ -91,7 +89,8 @@ export default function Home() {
     setDrawerOpen(true);
   };
 
-  const handleSaveIssue = (updated: IssueRecord) => {
+  const handleSaveIssue = async (updated: IssueRecord) => {
+    // 1. Update local React state instantly (Optimistic Update)
     setIssues((prev) => {
       const exists = prev.some((it) => it.id === updated.id);
       if (exists) {
@@ -101,6 +100,31 @@ export default function Home() {
       }
     });
     setSelectedIssue(updated);
+
+    // 2. Perform Firestore Write operation
+    try {
+      console.log("Firestore: Saving record", updated.id);
+      await saveIssue(updated);
+      console.log("Firestore: Successfully saved record", updated.id);
+    } catch (err) {
+      console.error("Firestore: Error saving record", updated.id, ":", err);
+      // Optional: Handle rollback if persistence fails
+    }
+  };
+
+  const handleDeleteIssue = async (id: string) => {
+    // 1. Update local React state instantly (Optimistic Update)
+    setIssues((prev) => prev.filter((it) => it.id !== id));
+
+    // 2. Perform Firestore Delete operation
+    try {
+      console.log("Firestore: Deleting record", id);
+      await deleteIssueById(id);
+      console.log("Firestore: Successfully deleted record", id);
+    } catch (err) {
+      console.error("Firestore: Error deleting record", id, ":", err);
+      // Optional: Handle rollback if persistence fails
+    }
   };
 
   return (
@@ -233,6 +257,7 @@ export default function Home() {
         issue={selectedIssue}
         onClose={handleCloseDrawer}
         onSave={handleSaveIssue}
+        onDelete={handleDeleteIssue}
         employeeSuggestions={employeeSuggestions}
         subTeamSuggestions={subTeamSuggestions}
       />

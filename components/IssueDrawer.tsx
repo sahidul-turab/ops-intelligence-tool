@@ -162,6 +162,7 @@ export default function IssueDrawer({
 }: IssueDrawerProps) {
   const [mode, setMode] = useState<"read" | "edit">("read");
   const [form, setForm] = useState<FormState | null>(null);
+  const isEdit = mode === "edit";
 
   const isCreate = issue ? !issue.employeeName : false;
 
@@ -175,6 +176,23 @@ export default function IssueDrawer({
       }
     }
   }, [issue, isCreate]);
+
+
+  const filteredSubTeamSuggestions = useMemo(() => {
+    if (isEdit && form?.employeeName && employeeProfiles) {
+      const personalDepts = employeeProfiles
+        .filter(p => p.name === form.employeeName)
+        .map(p => p.subTeamName)
+        .filter(Boolean);
+
+      if (personalDepts.length > 0) {
+        // Return personal departments first, then the rest
+        const others = subTeamSuggestions.filter(s => !personalDepts.includes(s));
+        return Array.from(new Set([...personalDepts, ...others]));
+      }
+    }
+    return subTeamSuggestions;
+  }, [form?.employeeName, subTeamSuggestions, employeeProfiles, isEdit]);
 
   if (!open || !issue || !form) return null;
 
@@ -236,7 +254,6 @@ export default function IssueDrawer({
     }
   };
 
-  const isEdit = mode === "edit";
 
   const validation = {
     date: !!form.date,
@@ -248,21 +265,6 @@ export default function IssueDrawer({
 
   const isValid = Object.values(validation).every(v => v);
 
-  const filteredSubTeamSuggestions = useMemo(() => {
-    if (isEdit && form?.employeeName && employeeProfiles) {
-      const personalDepts = employeeProfiles
-        .filter(p => p.name === form.employeeName)
-        .map(p => p.subTeamName)
-        .filter(Boolean);
-
-      if (personalDepts.length > 0) {
-        // Return personal departments first, then the rest
-        const others = subTeamSuggestions.filter(s => !personalDepts.includes(s));
-        return Array.from(new Set([...personalDepts, ...others]));
-      }
-    }
-    return subTeamSuggestions;
-  }, [form?.employeeName, subTeamSuggestions, employeeProfiles, isEdit]);
 
   const insertFormatting = (type: 'bold' | 'italic' | 'underline' | 'bullet' | 'number' | 'quote' | 'clear') => {
     const textarea = document.getElementById("workDetails-textarea") as HTMLTextAreaElement;

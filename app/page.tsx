@@ -36,6 +36,20 @@ export default function Home() {
     setSyncTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
   }, []);
 
+  const hydrateRecords = (data: any[]) => {
+    return data.map((it) => {
+      let category = it.category;
+      if (category === "Risk / Warning") category = Category.RiskWarning;
+      if (category === "Availability Update") category = Category.Availability;
+
+      return {
+        ...it,
+        category,
+        date: it.date?.toDate ? it.date.toDate() : new Date(it.date),
+      };
+    });
+  };
+
   // Firestore Data Loader
   useEffect(() => {
     if (!user || !isAuthorized) return;
@@ -43,10 +57,7 @@ export default function Home() {
     const loadData = async () => {
       try {
         const firestoreData = await fetchIssues();
-        const hydrated = firestoreData.map((it: any) => ({
-          ...it,
-          date: it.date?.toDate ? it.date.toDate() : new Date(it.date),
-        }));
+        const hydrated = hydrateRecords(firestoreData);
         console.log("Firestore: Successfully fetched", hydrated.length, "records");
         setIssues(hydrated);
       } catch (err) {

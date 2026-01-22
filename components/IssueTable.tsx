@@ -18,12 +18,12 @@ export default function IssueTable({ issues, title = "Granular Data", onSelectIs
   const getCategoryStyles = (cat: string) => {
     switch (cat) {
       case "Issue":
-      case "Risk / Warning":
+      case "Potential Problem":
         return "bg-red-950/40 text-red-400 ring-red-900/50";
       case "Success / Achievement":
       case "Appreciation":
         return "bg-emerald-950/40 text-emerald-400 ring-emerald-900/50";
-      case "Availability Update":
+      case "Punctuality/Behaviour":
         return "bg-sky-950/40 text-sky-400 ring-sky-900/50";
       default:
         return "bg-zinc-800 text-zinc-400 ring-zinc-700";

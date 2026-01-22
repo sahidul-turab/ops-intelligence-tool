@@ -1,7 +1,7 @@
 export enum Category {
   Issue = "Issue",
-  RiskWarning = "Risk / Warning",
-  Availability = "Availability Update",
+  RiskWarning = "Potential Problem",
+  Availability = "Punctuality/Behaviour",
   Success = "Success / Achievement",
   Appreciation = "Appreciation",
 }

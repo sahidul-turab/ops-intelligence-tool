@@ -124,7 +124,7 @@ function renderMarkdown(text: string) {
 }
 
 function renderInlineMarkdown(text: string) {
-  let parts: (string | JSX.Element)[] = [text];
+  let parts: (string | React.ReactNode)[] = [text];
 
   // Bold (**text**)
   parts = parts.flatMap(p => {
@@ -315,7 +315,7 @@ export default function IssueDrawer({
             <div className="min-w-0 flex-1">
               <div className="mb-2 flex items-center gap-2">
                 <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-medium tracking-tight ring-1 ring-inset ${isCreate ? "bg-zinc-800 text-zinc-300 ring-zinc-700" :
-                    isEdit ? "bg-zinc-800 text-zinc-300 ring-zinc-700" : categoryBadgeClass(issue.category)
+                  isEdit ? "bg-zinc-800 text-zinc-300 ring-zinc-700" : categoryBadgeClass(issue.category)
                   }`}>
                   {isCreate ? "NEW RECORD" : (isEdit ? form.category : issue.category)}
                 </span>

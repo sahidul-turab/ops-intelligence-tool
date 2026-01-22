@@ -95,15 +95,31 @@ export default function Home() {
   // Build Hierarchy Map: Manager -> [Direct Reports]
   const hierarchyMap = useMemo(() => {
     const map = new Map<string, string[]>();
+
     directoryUsers.forEach(u => {
-      if (u.reportingManager && u.name) {
-        // key: reportingManager (lower case for case-insensitive lookup), value: array of staff names
-        const mgr = u.reportingManager.toLowerCase().trim();
+      if (!u.name) return;
+
+      const managers = new Set<string>();
+
+      // 1. Check new assignments array
+      if (Array.isArray(u.assignments)) {
+        u.assignments.forEach((a: any) => {
+          if (a.reportingManager) managers.add(a.reportingManager.toLowerCase().trim());
+        });
+      }
+
+      // 2. Fallback for legacy reportingManager field
+      if (u.reportingManager) {
+        managers.add(u.reportingManager.toLowerCase().trim());
+      }
+
+      // Add user to each of their managers' report lists
+      managers.forEach(mgr => {
         if (!map.has(mgr)) {
           map.set(mgr, []);
         }
         map.get(mgr)?.push(u.name);
-      }
+      });
     });
     return map;
   }, [directoryUsers]);
@@ -145,22 +161,21 @@ export default function Home() {
       // Employee Filter with Hierarchy Recursion
       if (employeeFilter) {
         const query = employeeFilter.toLowerCase().trim();
-        // Check if the query matches a known user (Root of the filtering tree)
-        // We try to find an exact match in the directory first to enable smart recursion
         const exactUserMatch = directoryUsers.find(u => u.name.toLowerCase() === query);
 
         if (exactUserMatch) {
-          // Smart Hierarchy Filter: Show Issue if Employee is the Target OR their Subordinate
           const allSubordinates = getAllSubordinates(exactUserMatch.name);
-          const isTarget = issue.employeeName.toLowerCase() === query;
-          const isSubordinate = allSubordinates.has(issue.employeeName);
+          const lowerSubordinates = new Set(Array.from(allSubordinates).map(s => s.toLowerCase()));
 
-          if (!isTarget && !isSubordinate) {
+          const isTarget = issue.employeeName.toLowerCase() === query;
+          const isSubordinate = lowerSubordinates.has(issue.employeeName.toLowerCase());
+          const isSupervisorOnRecord = issue.reportingManager.toLowerCase() === query;
+
+          if (!isTarget && !isSubordinate && !isSupervisorOnRecord) {
             return false;
           }
         } else {
           // Fallback: Simple String Match (partial name or supervisor name)
-          // This maintains behavior for partial typing
           const matchesEmployee = issue.employeeName.toLowerCase().includes(query);
           const matchesManager = issue.reportingManager.toLowerCase().includes(query);
 

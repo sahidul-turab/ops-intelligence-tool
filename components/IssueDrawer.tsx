@@ -10,6 +10,7 @@ export type IssueDrawerProps = {
   onDelete?: (id: string) => void;
   employeeSuggestions: string[];
   subTeamSuggestions: string[];
+  employeeProfiles?: Record<string, { subTeamName: string; reportingManager: string; employeeRoleLevel: number }>;
 };
 
 type FormState = {
@@ -22,6 +23,15 @@ type FormState = {
   category: Category;
   reportingManager: string;
   studentEnd: boolean;
+  employeeRoleLevel: number;
+};
+
+const ROLE_LEVEL_LABELS: Record<number, string> = {
+  1: "Junior Executive",
+  2: "Executive",
+  3: "Senior Executive",
+  4: "Lead",
+  5: "Manager",
 };
 
 function formatDisplayDate(d: Date): string {
@@ -31,13 +41,17 @@ function formatDisplayDate(d: Date): string {
 function categoryBadgeClass(category: Category): string {
   switch (category) {
     case Category.Issue:
-      return "bg-red-50 text-red-600 ring-red-100";
+      return "bg-red-500/10 text-red-400 ring-red-500/20";
     case Category.Success:
-      return "bg-emerald-50 text-emerald-600 ring-emerald-100";
-    case Category.Warning:
-      return "bg-amber-50 text-amber-600 ring-amber-100";
+      return "bg-emerald-500/10 text-emerald-400 ring-emerald-500/20";
+    case Category.RiskWarning:
+      return "bg-amber-500/10 text-amber-400 ring-amber-500/20";
+    case Category.Availability:
+      return "bg-sky-500/10 text-sky-400 ring-sky-500/20";
+    case Category.Appreciation:
+      return "bg-pink-500/10 text-pink-400 ring-pink-500/20";
     default:
-      return "bg-zinc-50 text-zinc-500 ring-zinc-100";
+      return "bg-zinc-500/10 text-zinc-400 ring-zinc-500/20";
   }
 }
 
@@ -59,9 +73,82 @@ function issueToForm(issue: IssueRecord): FormState {
     category: issue.category,
     reportingManager: issue.reportingManager,
     studentEnd: issue.studentEnd,
+    employeeRoleLevel: issue.employeeRoleLevel ?? 2,
   };
 }
 
+/** Simple Markdown-to-JSX Parser for the logs */
+function renderMarkdown(text: string) {
+  if (!text) return null;
+
+  // Split by lines to handle list items and blockquotes
+  const lines = text.split('\n');
+  return lines.map((line, i) => {
+    let content: any = line;
+
+    // Handle Blockquote
+    if (line.startsWith('> ')) {
+      return (
+        <blockquote key={i} className="border-l-4 border-zinc-700 pl-4 py-1 my-2 bg-zinc-900/40 rounded-r-lg text-zinc-300 italic">
+          {renderInlineMarkdown(line.slice(2))}
+        </blockquote>
+      );
+    }
+
+    // Handle Bullet Points
+    if (line.startsWith('- ') || line.startsWith('* ')) {
+      return (
+        <li key={i} className="ml-4 list-disc text-zinc-400 mb-1">
+          {renderInlineMarkdown(line.slice(2))}
+        </li>
+      );
+    }
+
+    // Handle Numbered List
+    if (/^\d+\.\s/.test(line)) {
+      const match = line.match(/^(\d+\.\s)(.*)/);
+      return (
+        <li key={i} className="ml-4 list-decimal text-zinc-400 mb-1">
+          {renderInlineMarkdown(match ? match[2] : line)}
+        </li>
+      );
+    }
+
+    // Default line
+    return (
+      <div key={i} className="min-h-[1.2em] mb-1">
+        {renderInlineMarkdown(line)}
+      </div>
+    );
+  });
+}
+
+function renderInlineMarkdown(text: string) {
+  let parts: (string | JSX.Element)[] = [text];
+
+  // Bold (**text**)
+  parts = parts.flatMap(p => {
+    if (typeof p !== 'string') return p;
+    const split = p.split(/(\*\*.*?\*\*)/g);
+    return split.map(s => s.startsWith('**') && s.endsWith('**') ? <strong className="text-zinc-100 font-bold">{s.slice(2, -2)}</strong> : s);
+  });
+
+  // Italic (_text_ or *text*)
+  parts = parts.flatMap(p => {
+    if (typeof p !== 'string') return p;
+    const split = p.split(/(_.*?_|\*.*?\*)/g);
+    return split.map(s => (s.startsWith('_') && s.endsWith('_')) || (s.startsWith('*') && s.endsWith('*')) ? <em className="italic text-zinc-300">{s.slice(1, -1)}</em> : s);
+  });
+
+  // Underline (<u>text</u>)
+  parts = parts.flatMap(p => {
+    if (typeof p !== 'string') return p;
+    const split = p.split(/(<u>.*?<\/u>)/g);
+    return split.map(s => s.startsWith('<u>') && s.endsWith('</u>') ? <span className="underline decoration-zinc-500">{s.slice(3, -4)}</span> : s);
+  });
+
+  return parts;
+}
 
 export default function IssueDrawer({
   open,
@@ -71,6 +158,7 @@ export default function IssueDrawer({
   onDelete,
   employeeSuggestions,
   subTeamSuggestions,
+  employeeProfiles,
 }: IssueDrawerProps) {
   const [mode, setMode] = useState<"read" | "edit">("read");
   const [form, setForm] = useState<FormState | null>(null);
@@ -80,7 +168,6 @@ export default function IssueDrawer({
   useEffect(() => {
     if (issue) {
       setForm(issueToForm(issue));
-      // Auto-enter edit mode if creating a new record
       if (isCreate) {
         setMode("edit");
       } else {
@@ -92,7 +179,21 @@ export default function IssueDrawer({
   if (!open || !issue || !form) return null;
 
   const handleChange = <K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
+    setForm((prev) => {
+      if (!prev) return prev;
+      const newState = { ...prev, [key]: value };
+
+      if (key === "employeeName" && employeeProfiles) {
+        const profile = employeeProfiles[value as string];
+        if (profile) {
+          newState.subTeamName = profile.subTeamName;
+          newState.reportingManager = profile.reportingManager;
+          newState.employeeRoleLevel = profile.employeeRoleLevel;
+        }
+      }
+
+      return newState;
+    });
   };
 
   const handleSave = () => {
@@ -107,6 +208,7 @@ export default function IssueDrawer({
       category: form.category,
       reportingManager: form.reportingManager,
       studentEnd: form.studentEnd,
+      employeeRoleLevel: form.employeeRoleLevel,
     };
     onSave(updated);
     if (isCreate) {
@@ -135,53 +237,100 @@ export default function IssueDrawer({
 
   const isValid = Object.values(validation).every(v => v);
 
-  const ValidationHint = ({ valid }: { valid: boolean }) => (
-    isEdit && !valid ? (
-      <span className="ml-2 text-[9px] font-bold text-red-500 uppercase tracking-tight">Required</span>
-    ) : null
-  );
+  const insertFormatting = (type: 'bold' | 'italic' | 'underline' | 'bullet' | 'number' | 'quote' | 'clear') => {
+    const textarea = document.getElementById("workDetails-textarea") as HTMLTextAreaElement;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const selected = text.substring(start, end);
+
+    let result = text;
+    let newCursorPos = start;
+
+    switch (type) {
+      case 'bold':
+        result = text.substring(0, start) + "**" + selected + "**" + text.substring(end);
+        newCursorPos = start + 2;
+        break;
+      case 'italic':
+        result = text.substring(0, start) + "_" + selected + "_" + text.substring(end);
+        newCursorPos = start + 1;
+        break;
+      case 'underline':
+        result = text.substring(0, start) + "<u>" + selected + "</u>" + text.substring(end);
+        newCursorPos = start + 3;
+        break;
+      case 'bullet':
+        result = text.substring(0, start) + "\n- " + selected + text.substring(end);
+        newCursorPos = start + 3;
+        break;
+      case 'number':
+        result = text.substring(0, start) + "\n1. " + selected + text.substring(end);
+        newCursorPos = start + 4;
+        break;
+      case 'quote':
+        result = text.substring(0, start) + "\n> " + selected + text.substring(end);
+        newCursorPos = start + 3;
+        break;
+      case 'clear':
+        // Strip markdown-like symbols
+        const cleared = selected
+          .replace(/\*\*|\*|_/g, '')
+          .replace(/<u>|<\/u>/g, '')
+          .replace(/^[\s]*[-*+]\s+/gm, '')
+          .replace(/^[\s]*\d+\.\s+/gm, '')
+          .replace(/^[\s]*>\s+/gm, '');
+        result = text.substring(0, start) + cleared + text.substring(end);
+        newCursorPos = start;
+        break;
+    }
+
+    handleChange("workDetails", result);
+
+    setTimeout(() => {
+      textarea.focus();
+      if (selected.length > 0) {
+        textarea.setSelectionRange(start, start + (result.length - text.length + selected.length));
+      } else {
+        textarea.setSelectionRange(newCursorPos, newCursorPos);
+      }
+    }, 10);
+  };
 
   return (
-    <div className="fixed inset-0 z-50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <button
         type="button"
-        className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm transition-opacity"
+        className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
         aria-label="Close details"
         onClick={onClose}
       />
 
-      <aside className="absolute right-0 top-0 flex h-full w-full max-w-xl flex-col bg-white shadow-2xl transition-transform">
+      <aside className="relative flex max-h-[90vh] w-full max-w-5xl flex-col rounded-3xl bg-black border border-white/10 shadow-2xl overflow-hidden">
         {/* Header */}
-        <div className={`border-b border-zinc-100 px-8 py-6 ${isCreate ? "bg-zinc-900" : "bg-zinc-50/50"}`}>
+        <div className="border-b border-zinc-800 px-8 py-5 bg-black">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
               <div className="mb-2 flex items-center gap-2">
-                <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ring-1 ring-inset ${isCreate ? "bg-white/10 text-white ring-white/20" : categoryBadgeClass(isEdit ? form.category : issue.category)
+                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-medium tracking-tight ring-1 ring-inset ${isCreate ? "bg-zinc-800 text-zinc-300 ring-zinc-700" :
+                    isEdit ? "bg-zinc-800 text-zinc-300 ring-zinc-700" : categoryBadgeClass(issue.category)
                   }`}>
                   {isCreate ? "NEW RECORD" : (isEdit ? form.category : issue.category)}
                 </span>
-                <span className={`text-[10px] font-bold uppercase tracking-widest ${isCreate ? "text-zinc-400" : "text-zinc-400"}`}>
-                  {isCreate ? "Draft Entry" : `ID: ${isEdit ? form.id : issue.id}`}
+                <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-widest">
+                  {isCreate ? "DRAFT" : `LOG #${isEdit ? form.id.slice(-6) : issue.id.slice(-6)}`}
                 </span>
               </div>
-              <h2 className={`text-xl font-bold tracking-tight leading-tight ${isCreate ? "text-white" : "text-zinc-900"}`}>
-                {isEdit ? (
-                  <input
-                    type="text"
-                    value={form.workTitle}
-                    onChange={(e) => handleChange("workTitle", e.target.value)}
-                    placeholder="Work Title"
-                    className={`w-full bg-transparent border-none p-0 focus:ring-0 ${isCreate ? "placeholder:text-zinc-600 text-white" : "placeholder:text-zinc-300 text-zinc-900"}`}
-                  />
-                ) : (
-                  issue.workTitle
-                )}
+              <h2 className="text-xl font-bold tracking-tight text-white line-clamp-1">
+                {isEdit ? (isCreate ? "Create New Incident Log" : "Edit Incident Log") : issue.workTitle}
               </h2>
             </div>
             <button
               type="button"
               onClick={onClose}
-              className={`rounded-full p-2 transition-colors ${isCreate ? "text-zinc-400 hover:bg-white/10" : "text-zinc-400 hover:bg-zinc-100"}`}
+              className="rounded-full p-2 text-zinc-500 hover:bg-zinc-800 hover:text-white transition-colors"
             >
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -191,242 +340,274 @@ export default function IssueDrawer({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-8 py-10 no-scrollbar">
-          <div className="space-y-12">
-            {/* Meta Information */}
-            <section className="space-y-6">
-              <div className="flex items-center gap-2">
-                <div className="h-1 w-4 rounded-full bg-zinc-900" />
-                <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-400">Section 1: Meta Information</h3>
-              </div>
-              <div className="grid grid-cols-2 gap-x-12 gap-y-8">
-                <div className="space-y-1.5">
-                  <div className="flex items-center">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Incident Date</p>
-                    <ValidationHint valid={validation.date} />
-                  </div>
-                  {isEdit ? (
-                    <input
-                      type="date"
-                      value={form.date}
-                      onChange={(e) => handleChange("date", e.target.value)}
-                      className="w-full rounded-lg border border-zinc-200 bg-zinc-50/50 px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900"
-                    />
-                  ) : (
-                    <p className="text-sm font-semibold text-zinc-900">{formatDisplayDate(issue.date)}</p>
-                  )}
+        <div className="flex-1 overflow-y-auto px-8 py-8 no-scrollbar">
+          <div className="flex flex-col lg:flex-row gap-12">
+            {/* LEFT COLUMN */}
+            <div className="w-full lg:w-5/12 space-y-10">
+              <section className="space-y-4">
+                <div className="border-b border-zinc-800/50 pb-2">
+                  <h3 className="text-xs font-semibold text-zinc-400">Context</h3>
                 </div>
-                <div className="space-y-1.5">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Student Facing</p>
-                  {isEdit ? (
-                    <button
-                      type="button"
-                      onClick={() => handleChange("studentEnd", !form.studentEnd)}
-                      className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold transition-colors ${form.studentEnd
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                        : "border-zinc-200 bg-zinc-50 text-zinc-500"
-                        }`}
-                    >
-                      <div className={`h-2 w-2 rounded-full ${form.studentEnd ? "bg-emerald-500 animate-pulse" : "bg-zinc-300"}`} />
-                      {form.studentEnd ? "YES, USER FACING" : "NO, INTERNAL ONLY"}
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <div className={`h-2 w-2 rounded-full ${issue.studentEnd ? "bg-emerald-500" : "bg-zinc-300"}`} />
-                      <p className={`text-sm font-bold uppercase tracking-tight ${issue.studentEnd ? "text-emerald-700" : "text-zinc-500"}`}>
-                        {issue.studentEnd ? "Yes, Student End" : "No, Back office"}
-                      </p>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-medium uppercase tracking-widest text-zinc-500">Incident Date <span className="text-red-500">*</span></p>
+                    {isEdit ? (
+                      <input
+                        type="date"
+                        value={form.date}
+                        onChange={(e) => handleChange("date", e.target.value)}
+                        className="w-full h-10 rounded-xl border border-white/5 bg-zinc-900/50 px-3 text-xs text-zinc-300 focus:border-white/20 focus:bg-zinc-900 focus:outline-none focus:ring-1 focus:ring-white/20 color-scheme-dark transition-all"
+                      />
+                    ) : (
+                      <p className="text-sm font-semibold text-zinc-200">{formatDisplayDate(issue.date)}</p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-medium uppercase tracking-widest text-zinc-500">Student Facing</p>
+                    {isEdit ? (
+                      <button
+                        type="button"
+                        onClick={() => handleChange("studentEnd", !form.studentEnd)}
+                        className={`inline-flex items-center gap-2 rounded-xl border px-3 text-[10px] font-medium transition-all w-full h-10 justify-center ${form.studentEnd
+                          ? "border-red-500/20 bg-red-500/5 text-red-400"
+                          : "border-white/5 bg-zinc-900/50 text-zinc-500"
+                          }`}
+                      >
+                        <div className={`h-1 w-1 rounded-full ${form.studentEnd ? "bg-red-400 animate-pulse" : "bg-zinc-600"}`} />
+                        {form.studentEnd ? "YES, USER FACING" : "NO, INTERNAL"}
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-2 h-10">
+                        <div className={`h-1.5 w-1.5 rounded-full ${issue.studentEnd ? "bg-red-500" : "bg-zinc-600"}`} />
+                        <p className={`text-xs font-bold uppercase tracking-tight ${issue.studentEnd ? "text-red-500" : "text-zinc-500"}`}>
+                          {issue.studentEnd ? "User Facing" : "Internal"}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="col-span-2 space-y-1.5">
+                    <p className="text-[10px] font-medium uppercase tracking-widest text-zinc-500">Classification <span className="text-red-500">*</span></p>
+                    {isEdit ? (
+                      <select
+                        value={form.category}
+                        onChange={(e) => handleChange("category", e.target.value as Category)}
+                        className="w-full h-10 rounded-xl border border-white/5 bg-zinc-900/50 px-3 text-xs text-zinc-300 focus:border-white/20 focus:bg-zinc-900 focus:outline-none focus:ring-1 focus:ring-white/20 transition-all"
+                      >
+                        {Object.values(Category).map((cat) => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="flex items-center h-10">
+                        <span className={`inline-flex items-center rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-tight ring-1 ring-inset ${categoryBadgeClass(issue.category)}`}>
+                          {issue.category}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              <section className="space-y-4">
+                <div className="border-b border-zinc-800/50 pb-2">
+                  <h3 className="text-xs font-semibold text-zinc-400">Stakeholders</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-medium uppercase tracking-widest text-zinc-500">Ops Executive <span className="text-red-500">*</span></p>
+                    {isEdit ? (
+                      <Autocomplete
+                        value={form.employeeName}
+                        onChange={(val) => handleChange("employeeName", val)}
+                        suggestions={employeeSuggestions}
+                        placeholder="Name"
+                      />
+                    ) : (
+                      <p className="text-sm font-bold text-zinc-200">{issue.employeeName}</p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-medium uppercase tracking-widest text-zinc-500">Department <span className="text-red-500">*</span></p>
+                    {isEdit ? (
+                      <Autocomplete
+                        value={form.subTeamName}
+                        onChange={(val) => handleChange("subTeamName", val)}
+                        suggestions={subTeamSuggestions}
+                        placeholder="Department"
+                      />
+                    ) : (
+                      <p className="text-sm font-semibold text-zinc-400">{issue.subTeamName}</p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-medium uppercase tracking-widest text-zinc-500">Role Level</p>
+                    {isEdit ? (
+                      <select
+                        value={form.employeeRoleLevel}
+                        onChange={(e) => handleChange("employeeRoleLevel", parseInt(e.target.value, 10))}
+                        className="w-full h-10 rounded-xl border border-white/5 bg-zinc-900/50 px-3 text-xs text-zinc-300 focus:border-white/20 focus:bg-zinc-900 focus:outline-none focus:ring-1 focus:ring-white/20 transition-all"
+                      >
+                        {Object.entries(ROLE_LEVEL_LABELS).map(([val, label]) => (
+                          <option key={val} value={val}>{label}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <p className="text-sm font-semibold text-zinc-200">{ROLE_LEVEL_LABELS[form.employeeRoleLevel] || `Level ${form.employeeRoleLevel}`}</p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-medium uppercase tracking-widest text-zinc-500">Supervisor</p>
+                    {isEdit ? (
+                      <Autocomplete
+                        value={form.reportingManager}
+                        onChange={(val) => handleChange("reportingManager", val)}
+                        suggestions={employeeSuggestions}
+                        placeholder="Supervisor"
+                      />
+                    ) : (
+                      <p className="text-sm font-semibold text-zinc-400">{issue.reportingManager}</p>
+                    )}
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            {/* RIGHT COLUMN */}
+            <div className="w-full lg:w-7/12">
+              <section className="space-y-4 h-full flex flex-col">
+                <div className="border-b border-zinc-800/50 pb-2">
+                  <h3 className="text-xs font-semibold text-zinc-400">Narrative</h3>
+                </div>
+                <div className="space-y-6 flex-1 flex flex-col pt-2">
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-medium uppercase tracking-widest text-zinc-500">Summary Statement <span className="text-red-500">*</span></p>
+                    {isEdit ? (
+                      <input
+                        type="text"
+                        value={form.workTitle}
+                        onChange={(e) => handleChange("workTitle", e.target.value)}
+                        className="w-full h-10 rounded-xl border border-white/5 bg-zinc-900/50 px-4 text-sm text-zinc-300 focus:border-white/20 focus:bg-zinc-900 focus:outline-none focus:ring-1 focus:ring-white/20 transition-all"
+                        placeholder="Headline"
+                      />
+                    ) : (
+                      <p className="text-lg font-bold text-zinc-100 leading-snug">{issue.workTitle}</p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5 flex-1 flex flex-col">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <p className="text-[10px] font-medium uppercase tracking-widest text-zinc-500">Comprehensive Logs</p>
+                      {isEdit && (
+                        <div className="flex gap-1">
+                          <ToolbarButton onClick={() => insertFormatting('bold')} title="Bold">B</ToolbarButton>
+                          <ToolbarButton onClick={() => insertFormatting('italic')} title="Italic"><span className="italic">I</span></ToolbarButton>
+                          <ToolbarButton onClick={() => insertFormatting('underline')} title="Underline"><span className="underline">U</span></ToolbarButton>
+                          <ToolbarSeparator />
+                          <ToolbarButton onClick={() => insertFormatting('bullet')} title="Bullets">•</ToolbarButton>
+                          <ToolbarButton onClick={() => insertFormatting('number')} title="Numbers">1.</ToolbarButton>
+                          <ToolbarButton onClick={() => insertFormatting('quote')} title="Quote">”</ToolbarButton>
+                          <ToolbarSeparator />
+                          <ToolbarButton onClick={() => insertFormatting('clear')} title="Clear Formatting">Tx</ToolbarButton>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                <div className="col-span-2 space-y-1.5">
-                  <div className="flex items-center">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Record Classification</p>
-                    <ValidationHint valid={validation.category} />
+                    {isEdit ? (
+                      <textarea
+                        id="workDetails-textarea"
+                        value={form.workDetails}
+                        onChange={(e) => handleChange("workDetails", e.target.value)}
+                        className="w-full rounded-2xl border border-white/5 bg-zinc-900/50 px-4 py-4 text-sm text-zinc-300 focus:border-white/20 focus:bg-zinc-900 focus:outline-none focus:ring-1 focus:ring-white/20 resize-none flex-1 transition-all"
+                        placeholder="Enter detailed logs..."
+                      />
+                    ) : (
+                      <div className="flex-1 bg-zinc-900/30 rounded-2xl border border-white/5 p-6 mt-1 overflow-y-auto max-h-[400px]">
+                        <div className="text-sm leading-relaxed text-zinc-400">
+                          {renderMarkdown(issue.workDetails)}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  {isEdit ? (
-                    <select
-                      value={form.category}
-                      onChange={(e) => handleChange("category", e.target.value as Category)}
-                      className="w-full rounded-lg border border-zinc-200 bg-zinc-50/50 px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900"
-                    >
-                      {Object.values(Category).map((cat) => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest ring-1 ring-inset ${categoryBadgeClass(issue.category)}`}>
-                      {issue.category}
-                    </span>
-                  )}
                 </div>
-              </div>
-            </section>
-
-            {/* Employee Information */}
-            <section className="space-y-6">
-              <div className="flex items-center gap-2">
-                <div className="h-1 w-4 rounded-full bg-zinc-900" />
-                <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-400">Section 2: Stakeholders</h3>
-              </div>
-              <div className="grid grid-cols-2 gap-x-12 gap-y-8">
-                <div className="space-y-1.5">
-                  <div className="flex items-center">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Ops Executive</p>
-                    <ValidationHint valid={validation.employeeName} />
-                  </div>
-                  {isEdit ? (
-                    <Autocomplete
-                      value={form.employeeName}
-                      onChange={(val) => handleChange("employeeName", val)}
-                      suggestions={employeeSuggestions}
-                      placeholder="Enter name..."
-                    />
-                  ) : (
-                    <p className="text-sm font-bold text-zinc-900">{issue.employeeName}</p>
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <div className="flex items-center">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Department/Team</p>
-                    <ValidationHint valid={validation.subTeamName} />
-                  </div>
-                  {isEdit ? (
-                    <Autocomplete
-                      value={form.subTeamName}
-                      onChange={(val) => handleChange("subTeamName", val)}
-                      suggestions={subTeamSuggestions}
-                      placeholder="Enter team..."
-                    />
-                  ) : (
-                    <p className="text-sm font-semibold text-zinc-700">{issue.subTeamName}</p>
-                  )}
-                </div>
-                <div className="col-span-2 space-y-1.5">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Supervising Manager</p>
-                  {isEdit ? (
-                    <input
-                      type="text"
-                      value={form.reportingManager}
-                      onChange={(e) => handleChange("reportingManager", e.target.value)}
-                      className="w-full rounded-lg border border-zinc-200 bg-zinc-50/50 px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900"
-                    />
-                  ) : (
-                    <p className="text-sm font-semibold text-zinc-700">{issue.reportingManager}</p>
-                  )}
-                </div>
-              </div>
-            </section>
-
-            {/* Work Details */}
-            <section className="space-y-6">
-              <div className="flex items-center gap-2">
-                <div className="h-1 w-4 rounded-full bg-zinc-900" />
-                <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-zinc-400">Section 3: Primary Narrative</h3>
-              </div>
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <div className="flex items-center">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Summary Statement</p>
-                    <ValidationHint valid={validation.workTitle} />
-                  </div>
-                  {isEdit ? (
-                    <input
-                      type="text"
-                      value={form.workTitle}
-                      onChange={(e) => handleChange("workTitle", e.target.value)}
-                      className="w-full rounded-lg border border-zinc-200 bg-zinc-50/50 px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900"
-                    />
-                  ) : (
-                    <p className="text-base font-bold text-zinc-900 leading-snug">{issue.workTitle}</p>
-                  )}
-                </div>
-                <div className="space-y-2">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Comprehensive Logs</p>
-                  {isEdit ? (
-                    <textarea
-                      value={form.workDetails}
-                      onChange={(e) => handleChange("workDetails", e.target.value)}
-                      rows={8}
-                      className="w-full rounded-lg border border-zinc-200 bg-zinc-50/50 px-3 py-2 text-sm text-zinc-900 focus:border-zinc-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-zinc-900"
-                    />
-                  ) : (
-                    <p className="text-sm leading-relaxed text-zinc-600 border-l-2 border-zinc-100 pl-4 py-1 italic">
-                      "{issue.workDetails}"
-                    </p>
-                  )}
-                </div>
-              </div>
-            </section>
+              </section>
+            </div>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="border-t border-zinc-100 bg-zinc-50/30 px-8 py-6">
+        <div className="border-t border-zinc-800 bg-black px-8 py-5">
           {isEdit ? (
-            <div className="space-y-4">
-              {!isValid && (
-                <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-[10px] font-bold uppercase tracking-tight text-red-700 ring-1 ring-inset ring-red-200">
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                  Fields marked "Required" must be completed to proceed
-                </div>
-              )}
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <div className={`h-1.5 w-1.5 rounded-full ${isValid ? "bg-emerald-500" : "bg-zinc-700"}`} />
+                <span className="text-[10px] font-medium tracking-tight text-zinc-500 uppercase">
+                  {isValid ? "Ready to commit" : "Required fields missing"}
+                </span>
+              </div>
               <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => isCreate ? onClose() : (setForm(issueToForm(issue!)), setMode("read"))}
+                  className="rounded-xl border border-white/5 bg-zinc-900/50 px-6 py-2.5 text-xs font-bold uppercase tracking-widest text-zinc-400 hover:bg-zinc-900 hover:text-white transition-all"
+                >
+                  {isCreate ? "Cancel" : "Discard"}
+                </button>
                 <button
                   type="button"
                   onClick={handleSave}
                   disabled={!isValid}
-                  className="flex-1 rounded-xl bg-zinc-900 px-4 py-3 text-xs font-bold uppercase tracking-widest text-white transition-all hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="rounded-xl bg-white px-8 py-2.5 text-xs font-bold uppercase tracking-widest text-black transition-all hover:bg-zinc-200 disabled:opacity-20 disabled:cursor-not-allowed"
                 >
                   {isCreate ? "Create Record" : "Commit Entry"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isCreate) {
-                      onClose();
-                    } else {
-                      setForm(issueToForm(issue));
-                      setMode("read");
-                    }
-                  }}
-                  className="rounded-xl border border-zinc-200 bg-white px-6 py-3 text-xs font-bold uppercase tracking-widest text-zinc-500 hover:bg-zinc-50 transition-all"
-                >
-                  {isCreate ? "Cancel" : "Discard"}
                 </button>
               </div>
             </div>
           ) : (
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setMode("edit")}
-                className="flex-1 rounded-xl bg-white border border-zinc-200 px-4 py-3 text-xs font-bold uppercase tracking-widest text-zinc-900 transition-all hover:bg-zinc-50 hover:border-zinc-300"
-              >
-                Modify Record
-              </button>
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-xl border border-transparent bg-zinc-100 px-6 py-3 text-xs font-bold uppercase tracking-widest text-zinc-500 hover:bg-zinc-200 transition-all"
-              >
-                Exit
-              </button>
+            <div className="flex items-center justify-between w-full">
               {!isCreate && onDelete && (
                 <button
                   type="button"
                   onClick={handleDelete}
-                  className="rounded-xl border border-red-100 bg-red-50 px-6 py-3 text-xs font-bold uppercase tracking-widest text-red-600 hover:bg-red-100 transition-all ml-auto"
+                  className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-500/50 hover:text-red-500 transition-colors"
                 >
-                  Delete
+                  Archive Record
                 </button>
               )}
+              <div className="flex gap-3 ml-auto">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-xl border border-white/5 bg-zinc-900/50 px-6 py-2.5 text-xs font-bold uppercase tracking-widest text-zinc-400 hover:bg-zinc-900 hover:text-white transition-all"
+                >
+                  Exit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("edit")}
+                  className="rounded-xl bg-white border border-zinc-200 px-8 py-2.5 text-xs font-bold uppercase tracking-widest text-zinc-900 transition-all hover:bg-zinc-200"
+                >
+                  Modify
+                </button>
+              </div>
             </div>
           )}
         </div>
       </aside>
     </div>
   );
+}
+
+function ToolbarButton({ onClick, children, title }: { onClick: () => void, children: React.ReactNode, title: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="h-7 w-7 flex items-center justify-center rounded-md border border-white/5 bg-zinc-900 text-[11px] text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all active:scale-95"
+    >
+      {children}
+    </button>
+  );
+}
+
+function ToolbarSeparator() {
+  return <div className="w-[1px] h-4 bg-zinc-800 mx-1 self-center" />;
 }

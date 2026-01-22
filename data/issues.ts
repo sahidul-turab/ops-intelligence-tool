@@ -12,6 +12,7 @@ export const issues: IssueRecord[] = [
     category: Category.Issue,
     reportingManager: "Daniel Okafor",
     studentEnd: false,
+    employeeRoleLevel: 2,
   },
   {
     id: "ISS-1002",
@@ -24,6 +25,7 @@ export const issues: IssueRecord[] = [
     category: Category.Success,
     reportingManager: "Priya Nair",
     studentEnd: false,
+    employeeRoleLevel: 2,
   },
   {
     id: "ISS-1003",
@@ -36,6 +38,7 @@ export const issues: IssueRecord[] = [
     category: Category.Issue,
     reportingManager: "Marcus Chen",
     studentEnd: true,
+    employeeRoleLevel: 2,
   },
   {
     id: "ISS-1004",
@@ -48,6 +51,7 @@ export const issues: IssueRecord[] = [
     category: Category.Success,
     reportingManager: "Elena Petrova",
     studentEnd: false,
+    employeeRoleLevel: 2,
   },
   {
     id: "ISS-1005",
@@ -60,6 +64,7 @@ export const issues: IssueRecord[] = [
     category: Category.Issue,
     reportingManager: "Thomas Reid",
     studentEnd: true,
+    employeeRoleLevel: 2,
   },
   {
     id: "ISS-1006",
@@ -72,6 +77,7 @@ export const issues: IssueRecord[] = [
     category: Category.Success,
     reportingManager: "Grace Liu",
     studentEnd: false,
+    employeeRoleLevel: 2,
   },
 ];
 

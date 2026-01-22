@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Category, IssueRecord } from "../types/issue";
 import Autocomplete from "./Autocomplete";
 
@@ -10,7 +10,7 @@ export type IssueDrawerProps = {
   onDelete?: (id: string) => void;
   employeeSuggestions: string[];
   subTeamSuggestions: string[];
-  employeeProfiles?: Record<string, { subTeamName: string; reportingManager: string; employeeRoleLevel: number }>;
+  employeeProfiles?: Array<{ name: string; subTeamName: string; reportingManager: string; employeeRoleLevel: number }>;
 };
 
 type FormState = {
@@ -184,11 +184,22 @@ export default function IssueDrawer({
       const newState = { ...prev, [key]: value };
 
       if (key === "employeeName" && employeeProfiles) {
-        const profile = employeeProfiles[value as string];
-        if (profile) {
-          newState.subTeamName = profile.subTeamName;
-          newState.reportingManager = profile.reportingManager;
-          newState.employeeRoleLevel = profile.employeeRoleLevel;
+        const matches = employeeProfiles.filter(p => p.name === value);
+        if (matches.length === 1) {
+          newState.subTeamName = matches[0].subTeamName;
+          newState.reportingManager = matches[0].reportingManager;
+          newState.employeeRoleLevel = matches[0].employeeRoleLevel;
+        } else if (matches.length > 1) {
+          // If multiple departments, just set the role level (usually same for the person)
+          newState.employeeRoleLevel = matches[0].employeeRoleLevel;
+        }
+      }
+
+      if (key === "subTeamName" && employeeProfiles && newState.employeeName) {
+        const match = employeeProfiles.find(p => p.name === newState.employeeName && p.subTeamName === value);
+        if (match) {
+          newState.reportingManager = match.reportingManager;
+          newState.employeeRoleLevel = match.employeeRoleLevel;
         }
       }
 
@@ -236,6 +247,22 @@ export default function IssueDrawer({
   };
 
   const isValid = Object.values(validation).every(v => v);
+
+  const filteredSubTeamSuggestions = useMemo(() => {
+    if (isEdit && form?.employeeName && employeeProfiles) {
+      const personalDepts = employeeProfiles
+        .filter(p => p.name === form.employeeName)
+        .map(p => p.subTeamName)
+        .filter(Boolean);
+
+      if (personalDepts.length > 0) {
+        // Return personal departments first, then the rest
+        const others = subTeamSuggestions.filter(s => !personalDepts.includes(s));
+        return Array.from(new Set([...personalDepts, ...others]));
+      }
+    }
+    return subTeamSuggestions;
+  }, [form?.employeeName, subTeamSuggestions, employeeProfiles, isEdit]);
 
   const insertFormatting = (type: 'bold' | 'italic' | 'underline' | 'bullet' | 'number' | 'quote' | 'clear') => {
     const textarea = document.getElementById("workDetails-textarea") as HTMLTextAreaElement;
@@ -432,7 +459,7 @@ export default function IssueDrawer({
                       <Autocomplete
                         value={form.subTeamName}
                         onChange={(val) => handleChange("subTeamName", val)}
-                        suggestions={subTeamSuggestions}
+                        suggestions={filteredSubTeamSuggestions}
                         placeholder="Department"
                       />
                     ) : (

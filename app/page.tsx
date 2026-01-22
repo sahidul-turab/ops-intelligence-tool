@@ -205,34 +205,45 @@ export default function Home() {
   }, [issues, directoryUsers]);
 
   const employeeProfiles = useMemo(() => {
-    const profiles: Record<string, { subTeamName: string; reportingManager: string; employeeRoleLevel: number }> = {};
+    const profiles: Array<{ name: string; subTeamName: string; reportingManager: string; employeeRoleLevel: number }> = [];
 
     // 1. Base data from User Directory (Provisioned data)
     directoryUsers.forEach(u => {
       if (u.name) {
-        profiles[u.name] = {
-          subTeamName: u.department || "",
-          reportingManager: u.reportingManager || "",
-          employeeRoleLevel: u.roleLevel || 2,
-        };
+        // Flatten assignments into individual profile lookups
+        if (Array.isArray(u.assignments) && u.assignments.length > 0) {
+          u.assignments.forEach((assign: any) => {
+            profiles.push({
+              name: u.name,
+              subTeamName: assign.department || "",
+              reportingManager: assign.reportingManager || "",
+              employeeRoleLevel: u.roleLevel || 2,
+            });
+          });
+        } else {
+          // Fallback for legacy records
+          profiles.push({
+            name: u.name,
+            subTeamName: u.department || "",
+            reportingManager: u.reportingManager || "",
+            employeeRoleLevel: u.roleLevel || 2,
+          });
+        }
       }
     });
 
-    // 2. Enhance with Historical Issue Data (Most Recent)
-    const sortedIssues = [...issues].sort((a, b) => b.date.getTime() - a.date.getTime());
-    sortedIssues.forEach(issue => {
-      if (issue.employeeName) {
-        if (!profiles[issue.employeeName]) {
-          profiles[issue.employeeName] = {
+    // 2. Enhance with Historical Issue Data (Unique combinations)
+    // We want to capture historical assignments that might not be in the current directory
+    issues.forEach(issue => {
+      if (issue.employeeName && issue.subTeamName) {
+        const alreadyExists = profiles.some(p => p.name === issue.employeeName && p.subTeamName === issue.subTeamName);
+        if (!alreadyExists) {
+          profiles.push({
+            name: issue.employeeName,
             subTeamName: issue.subTeamName,
             reportingManager: issue.reportingManager,
             employeeRoleLevel: issue.employeeRoleLevel,
-          };
-        } else {
-          // If profile exists from directory, supplement department
-          if (!profiles[issue.employeeName].subTeamName) {
-            profiles[issue.employeeName].subTeamName = issue.subTeamName;
-          }
+          });
         }
       }
     });
